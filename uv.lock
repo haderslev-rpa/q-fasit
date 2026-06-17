@@ -335,7 +335,7 @@ requires-dist = [
 [[package]]
 name = "q-haderslev-vbo"
 version = "0.1.2"
-source = { git = "https://github.com/haderslev-rpa/q-haderslev-vbo.git?branch=main#da3880c9b7a59d81fe1564591407fda53b142bb2" }
+source = { git = "https://github.com/haderslev-rpa/q-haderslev-vbo.git?branch=main#994f3c548c692988518a9438bc78d415ea8c0b6a" }
 dependencies = [
     { name = "playwright" },
     { name = "q-sharepoint-api" },

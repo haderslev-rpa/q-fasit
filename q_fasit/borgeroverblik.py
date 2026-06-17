@@ -13,7 +13,7 @@ async def bo_kommunens_markeringer(page, session, tekst: str, timeout: int = 200
         await wait_for_page_ready(page)
         await page.wait_for_timeout(1000)
 
-        await session.recorder.screenshot(page, "STEP_1_side_klar")
+        await session.screenshot(page, "STEP_1_side_klar")
 
         # --------------------------------------------------
         # ✅ STEP 2: Åbn "Kommunens markeringer"
@@ -25,7 +25,7 @@ async def bo_kommunens_markeringer(page, session, tekst: str, timeout: int = 200
         await container.click()
         await page.wait_for_timeout(1000)
 
-        await session.recorder.screenshot(page, "STEP_2_container_aabnet")
+        await session.screenshot(page, "STEP_2_container_aabnet")
 
         # --------------------------------------------------
         # ✅ STEP 3: Klik "Redigér"
@@ -36,7 +36,7 @@ async def bo_kommunens_markeringer(page, session, tekst: str, timeout: int = 200
         await rediger.click()
         await page.wait_for_timeout(1000)
 
-        await session.recorder.screenshot(page, "STEP_3_rediger")
+        await session.screenshot(page, "STEP_3_rediger")
 
         # --------------------------------------------------
         # ✅ STEP 4: Indtast note
@@ -45,7 +45,7 @@ async def bo_kommunens_markeringer(page, session, tekst: str, timeout: int = 200
         await note.wait_for(state="visible", timeout=timeout)
         await note.fill(tekst)
 
-        await session.recorder.screenshot(page, "STEP_4_note_indtastet")
+        await session.screenshot(page, "STEP_4_note_indtastet")
 
         # --------------------------------------------------
         # ✅ STEP 5: Gem ændringer
@@ -58,11 +58,11 @@ async def bo_kommunens_markeringer(page, session, tekst: str, timeout: int = 200
 
         await wait_for_page_ready(page)
 
-        await session.recorder.screenshot(page, "STEP_5_gemt")
+        await session.screenshot(page, "STEP_5_gemt")
 
     except Exception as e:
         # --------------------------------------------------
         # ❌ FEJL
         # --------------------------------------------------
-        await session.recorder.screenshot(page, "FEJL_borgeroverblik")
+        await session.screenshot(page, "FEJL_borgeroverblik")
         raise e

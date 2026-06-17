@@ -20,7 +20,7 @@ async def launch_fasit(page, session, credential_name):
         await page.wait_for_load_state("domcontentloaded")
 
         # Screenshot før login-check
-        await session.recorder.screenshot(page, "STEP_1_startside")
+        await session.screenshot(page, "STEP_1_startside")
 
         # --------------------------------------------------
         # ✅ STEP 2: Tjek login
@@ -39,7 +39,7 @@ async def launch_fasit(page, session, credential_name):
             await wait_for_page_ready(page)
 
             # Screenshot efter kommunevalg
-            await session.recorder.screenshot(page, "STEP_2_kommune_valgt")
+            await session.screenshot(page, "STEP_2_kommune_valgt")
 
             # --------------------------------------------------
             # ✅ STEP 3: Login via fælles kommunal IDP
@@ -56,13 +56,13 @@ async def launch_fasit(page, session, credential_name):
             await page.goto(FASIT_URL)
             await wait_for_page_ready(page)
 
-            await session.recorder.screenshot(page, "STEP_3_efter_login")
+            await session.screenshot(page, "STEP_3_efter_login")
 
         else:
             print("✅ Allerede logget ind")
 
             # Screenshot hvis allerede logget ind
-            await session.recorder.screenshot(page, "STEP_2_allerede_logget_ind")
+            await session.screenshot(page, "STEP_2_allerede_logget_ind")
 
         print("✅ FASIT klar:", page.url)
 
@@ -70,5 +70,5 @@ async def launch_fasit(page, session, credential_name):
         # --------------------------------------------------
         # ❌ FEJL
         # --------------------------------------------------
-        await session.recorder.screenshot(page, "FEJL_launch_fasit")
+        await session.screenshot(page, "FEJL_launch_fasit")
         raise e

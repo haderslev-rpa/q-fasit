@@ -1,31 +1,23 @@
 import asyncio
 from dotenv import load_dotenv
 import os
-from playwright.async_api import async_playwright
 # ✅ Load env (fixer ATS_URL)
 load_dotenv()
 from q_fasit.launch import launch_fasit
 from q_fasit.fremsoeg_borger import fremsoeg_borger
 from q_fasit.borgeroverblik import bo_kommunens_markeringer
+from q_haderslev_vbo.playwright.browser_session import BrowserSession
 
 
-async def test_kommunens_markeringer():
-
-    print("🚀 Starter test af Kommunens markeringer...")
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,  # ✅ kan sættes til False ved debugging
-            args=["--start-maximized"],
-        )
-
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            ignore_https_errors=True,
-            locale="da-DK",
-        )
-
-        page = await context.new_page()
+async def main():
+    # -------------------------------------------------
+    # 1. Opret browser-session (run-sandhed)
+    # -------------------------------------------------
+    session = BrowserSession(headless=False, debug=True, video=True)
+    await session.start()
+    page = await session.new_page()
+ 
+    try:
 
         # --------------------------------------------------
         # ✅ Session (samme setup som dine andre tests)
@@ -79,7 +71,7 @@ async def test_kommunens_markeringer():
         # ekstra buffer (React/MUI rendering)
         await new_page.wait_for_timeout(2000)
 
-        await session.recorder.screenshot(new_page, "DEBUG_efter_borger_aabnet")
+        await session.screenshot(new_page, "DEBUG_efter_borger_aabnet")
 
         # --------------------------------------------------
         # ✅ 3) Indsæt Kommunens markering
@@ -97,10 +89,10 @@ async def test_kommunens_markeringer():
         # --------------------------------------------------
         print("✅ Test færdig - tekst indsat!")
 
-        await session.recorder.screenshot(new_page, "FINAL_RESULT")
+        await session.screenshot(new_page, "FINAL_RESULT")
 
-        await browser.close()
-
+    finally:
+        await session.close()
 
 if __name__ == "__main__":
     asyncio.run(test_kommunens_markeringer())

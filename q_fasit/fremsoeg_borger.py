@@ -18,7 +18,7 @@ async def fremsoeg_borger(page, session, cpr: str):
         cpr = normalize_cpr(cpr)
 
         await wait_for_page_ready(page)
-        await session.recorder.screenshot(page, "STEP_1_klar_til_soegning")
+        await session.screenshot(page, "STEP_1_klar_til_soegning")
 
         # --------------------------------------------------
         # ✅ STEP 2: Åbn søgefelt
@@ -33,7 +33,7 @@ async def fremsoeg_borger(page, session, cpr: str):
             timeout=15000
         )
 
-        await session.recorder.screenshot(page, "STEP_2_soegefelt")
+        await session.screenshot(page, "STEP_2_soegefelt")
 
         # --------------------------------------------------
         # ✅ STEP 3: Indtast CPR og søg
@@ -54,7 +54,7 @@ async def fremsoeg_borger(page, session, cpr: str):
         found_cpr = extract_cpr_from_text(text)
 
         if found_cpr != cpr:
-            await session.recorder.screenshot(page, "FEJL_cpr")
+            await session.screenshot(page, "FEJL_cpr")
             raise RuntimeError("❌ CPR matcher ikke")
 
         # --------------------------------------------------
@@ -80,7 +80,7 @@ async def fremsoeg_borger(page, session, cpr: str):
         await wait_for_page_ready(new_page)
         await new_page.wait_for_timeout(1500)
 
-        await session.recorder.screenshot(
+        await session.screenshot(
             new_page,
             "STEP_3_borger_aabnet"
         )
@@ -94,5 +94,5 @@ async def fremsoeg_borger(page, session, cpr: str):
         # --------------------------------------------------
         # ❌ FEJL
         # --------------------------------------------------
-        await session.recorder.screenshot(page, "FEJL_fremsoeg_borger")
+        await session.screenshot(page, "FEJL_fremsoeg_borger")
         raise e
