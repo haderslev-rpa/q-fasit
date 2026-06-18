@@ -3,9 +3,9 @@ from dotenv import load_dotenv
 import os
 # ✅ Load env (fixer ATS_URL)
 load_dotenv()
-from q_fasit.launch import launch_fasit
-from q_fasit.fremsoeg_borger import fremsoeg_borger
-from q_fasit.borgeroverblik import bo_kommunens_markeringer
+from q_fasit.functionality.launch import launch_fasit
+from q_fasit.functionality.fremsoeg_borger import fremsoeg_borger
+from q_fasit.functionality.borgeroverblik import bo_kommunens_markeringer
 from q_haderslev_vbo.playwright.browser_session import BrowserSession
 
 

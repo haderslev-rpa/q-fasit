@@ -3,8 +3,8 @@ from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 load_dotenv()
 import os
-from q_fasit.launch import launch_fasit
-from q_fasit.fremsoeg_borger import fremsoeg_borger
+from q_fasit.functionality.launch import launch_fasit
+from q_fasit.functionality.fremsoeg_borger import fremsoeg_borger
 from q_haderslev_vbo.playwright.browser_session import BrowserSession
 
 
