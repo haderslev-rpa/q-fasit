@@ -15,6 +15,10 @@ class FasitSelectors:
 # ==================================================
 
 class BorgerOverblikSelectors:
+
+    BORGEROVERBLIK = ("[.//h3[normalize-space()='Borgeroverblik']]")
+
+
     CONTAINER = (
         "//div[contains(@class,'MuiAccordion-root')]"
         "[.//span[normalize-space()='Kommunens markeringer']]"
