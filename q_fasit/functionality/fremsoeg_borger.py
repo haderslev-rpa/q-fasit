@@ -72,7 +72,7 @@ async def fremsoeg_borger(page, session, cpr: str):
         # --------------------------------------------------
         # ✅ STEP 6: Luk andre faner
         # --------------------------------------------------
-        await session.close_other_pages(new_page)
+        await session.close_all_other_tabs(page)
 
         # --------------------------------------------------
         # ✅ STEP 7: Stabiliser borger-side
