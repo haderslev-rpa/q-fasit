@@ -38,15 +38,6 @@ async def main():
             page=page,
             name="STEP_1_fasit_efter_login"
         )
-
-        # --------------------------------------------------
-        # ✅ TEST 1: Launch FASIT
-        # --------------------------------------------------
-        await launch_fasit(
-            page=page,
-            session=session,
-            credential_name="DIRXOPS",  # ← ret til rigtig
-        )
  
         # --------------------------------------------------
         # ✅ TEST 2: Fremsøg borger

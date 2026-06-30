@@ -35,20 +35,33 @@ async def screenshot(session, page, name: str):
 
 async def click_and_handle_tabs_strict(page, session, locator, timeout_ms=5000):
     context = session.context
+    existing_pages = context.pages  # liste (samling af faner)
 
-    try:
-        async with context.expect_page(timeout=timeout_ms) as page_event:
-            await locator.click()
+    # klik først
+    await locator.click()
 
-        new_page = await page_event.value
+    # vent på ny fane
+    new_page = None
 
-    except TimeoutError:
+    for _ in range(10):  # prøv flere gange (robusthed)
+        await page.wait_for_timeout(500)
+
+        if len(context.pages) > len(existing_pages):
+            # find ny side
+            new_page = [p for p in context.pages if p not in existing_pages][0]
+            break
+
+    # hvis ingen ny fane → brug samme page
+    if new_page is None:
+        print("⚠️ Ingen ny fane åbnet – bruger samme page")
         return page
 
+    # vent på den er klar
     await wait_for_page_ready(new_page)
     await new_page.bring_to_front()
 
     return new_page
+
 
 
 def extract_cpr_from_text(text: str):

@@ -8,6 +8,7 @@ class FasitSelectors:
     OK_BUTTON = "#btnOK"
 
     MUNICIPALITY = "Haderslev Kommune"
+    APP_HEADER = ".layout__app-header"
 
 
 # ==================================================

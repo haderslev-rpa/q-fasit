@@ -9,6 +9,7 @@ from q_fasit.utils import wait_for_page_ready
 async def launch_fasit(page, session, credential_name):
 
     FASIT_URL = "https://login.fasit.dk/haderslev/kombit"
+    FASIT_STARTSIDE_URL = "https://haderslev.schultzfasit.dk/"
 
     print("🌐 Går til FASIT...")
 
@@ -51,12 +52,25 @@ async def launch_fasit(page, session, credential_name):
             )
 
             # --------------------------------------------------
-            # ✅ STEP 4: Reload efter login
+            # ✅ STEP 4: Reload efter login og vent på startside
             # --------------------------------------------------
-            await page.goto(FASIT_URL)
+
+            # 1. Vent på korrekt URL (adresse)
+            await page.wait_for_url("**haderslev.schultzfasit.dk/**")
+
+            # 2. Vent på netværk er færdigt
+            await page.wait_for_load_state("networkidle")
+
+            # 3. Vent på header (UI klar)
+            await page.locator(S.APP_HEADER).wait_for(state="visible")
+
+            # 4. Ekstra stabilisering (lille buffer)
+            await page.wait_for_timeout(1000)
+
+            # 5. Din egen helper
             await wait_for_page_ready(page)
 
-            await session.screenshot(page, "STEP_3_efter_login")
+            await session.screenshot(page, "STEP_4_startside_klar")
 
         else:
             print("✅ Allerede logget ind")
