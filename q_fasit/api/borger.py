@@ -68,6 +68,18 @@ OPLYSNINGSSKEMA_TARGET_GROUP_ID = (
     "aa5c6a8e-1b27-e111-9ada-005056a823a6"
 )
 
+# ---------------------------------------------------------------------------
+# Aktivitetsparate kontanthjælpsmodtagere over 30 - afklaringsretten.
+# ---------------------------------------------------------------------------
+
+AKTIVITETSPARATE_KONTANTHJAELPSMODTAGERE_OVER_30 = (
+    "AKTIVITETSPARATE_KONTANTHJAELPSMODTAGERE_OVER_30"
+)
+
+AKTIVITETSPARATE_TARGET_GROUP_ID = (
+    "a65c6a8e-1b27-e111-9ada-005056a823a6"
+)
+
 
 # ---------------------------------------------------------------------------
 # Persongrupper
@@ -424,6 +436,124 @@ def _create_oplysningsskema_payload(
         "embeddedPageSize": 100,
     }
 
+def _create_aktivitetsparate_over_30_payload(
+    *,
+    target_group_id: str,
+    primary_case_statuses: list[str],
+    page_number: int,
+    page_size: int,
+) -> dict[str, Any]:
+    """
+    Opretter payloaden til listen over aktivitetsparate
+    kontanthjælpsmodtagere over 30 år.
+
+    Søgekriterier:
+    - Primær sagsstatus skal være 1 eller 3.
+    - Borgeren skal have en sag i den angivne målgruppe.
+    - Sagen skal være aktiv på dags dato eller uden slutdato.
+    - Borgerens alder skal være over 29 år.
+    """
+    return {
+        "body": {
+            "universe": "citizen",
+            "usePreviewVersion": False,
+            "queryType": "fasitDsl",
+            "query": {
+                "condition": "and",
+                "rules": [
+                    {
+                        "value": primary_case_statuses,
+                        "field": (
+                            "PrimaryCase."
+                            "PrimaryCaseStatus"
+                        ),
+                        "operator": "in",
+                    },
+                    {
+                        "rules": [
+                            {
+                                "field": (
+                                    "Cases.TargetGroup"
+                                ),
+                                "operator": "eq",
+                                "value": [
+                                    target_group_id,
+                                ],
+                            },
+                            {
+                                "rules": [
+                                    {
+                                        "field": (
+                                            "Cases.CaseEndDate"
+                                        ),
+                                        "operator": "ge",
+                                        "value": "@dd",
+                                    },
+                                    {
+                                        "field": (
+                                            "Cases.CaseEndDate"
+                                        ),
+                                        "operator": "empty",
+                                    },
+                                ],
+                                "condition": "or",
+                            },
+                        ],
+                        "condition": "and",
+                        "cardinality": "any",
+                        "type": "Cases",
+                    },
+                    {
+                        "field": "CitizenAge",
+                        "operator": "gt",
+                        "value": "29",
+                    },
+                ],
+            },
+            "dslVersion": "1.0.0",
+            "columns": [
+                {
+                    "name": "CitizenFullName",
+                },
+                {
+                    "name": "CitizenCprFormatted",
+                },
+                {
+                    "name": (
+                        "PrimaryCase."
+                        "CitizenCurrentTargetGroup"
+                    ),
+                },
+                {
+                    "name": (
+                        "PrimaryCase."
+                        "PrimaryCaseStartDate"
+                    ),
+                },
+                {
+                    "name": (
+                        "PrimaryCase."
+                        "PrimaryCaseEndDate"
+                    ),
+                },
+                {
+                    "name": "CitizenAge",
+                },
+            ],
+            "sortColumns": [
+                {
+                    "desc": False,
+                    "name": "CitizenFullName",
+                },
+            ],
+            "columnFilters": [],
+            "embeddedSortColumns": [],
+        },
+        "pageNumber": page_number,
+        "pageSize": page_size,
+        "embeddedPageNumber": 0,
+        "embeddedPageSize": 100,
+    }
 
 # ---------------------------------------------------------------------------
 # Hjælpefunktioner til persongrupper
@@ -1015,11 +1145,11 @@ async def hent_liste_oplysningsskemaer(
     target_group_id: str = OPLYSNINGSSKEMA_TARGET_GROUP_ID,
     case_statuses: list[str] | None = None,
     page_size: int = 250,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     """
-    Henter hele listen over oplysningsskemaer.
+    Henter alle oplysningsskemaer som individuelle rækker.
 
-    Funktionen håndterer selv paginering ved at kalde
+    Funktionen håndterer automatisk paginering ved at kalde
     FASIT med pageNumber 0, 1, 2 osv.
 
     Parametre:
@@ -1030,19 +1160,28 @@ async def hent_liste_oplysningsskemaer(
     - page_size: Antal resultater pr. API-kald, maksimalt 250.
 
     Output:
-    En dictionary med:
-    - results: Alle rækker samlet i én liste.
-    - totalResults: Antal hentede rækker.
-    - reportedTotal: Det samlede antal oplyst af FASIT.
-    - pageCount: Antal API-sidekald.
-    - reportedPageCount: Antal sider oplyst af FASIT.
+    En liste med alle rækker fra samtlige sider.
+
+    Eksempel:
+    [
+        {
+            "CitizenCprFormatted": "...",
+            "Cases.CreatedOn": "...",
+        },
+        {
+            "CitizenCprFormatted": "...",
+            "Cases.CreatedOn": "...",
+        },
+    ]
     """
     if not isinstance(created_after, str):
         raise ValueError(
             "created_after skal være en tekstværdi."
         )
 
-    normalized_created_after = created_after.strip()
+    normalized_created_after = (
+        created_after.strip()
+    )
 
     if not normalized_created_after:
         raise ValueError(
@@ -1066,7 +1205,7 @@ async def hent_liste_oplysningsskemaer(
                 "case_statuses skal være en liste."
             )
 
-        normalized_case_statuses = []
+        normalized_case_statuses: list[str] = []
 
         for status in case_statuses:
             if not isinstance(status, str):
@@ -1092,6 +1231,11 @@ async def hent_liste_oplysningsskemaer(
             "page_size skal være et heltal."
         )
 
+    if isinstance(page_size, bool):
+        raise ValueError(
+            "page_size skal være et heltal."
+        )
+
     if page_size < 1 or page_size > 250:
         raise ValueError(
             "page_size skal være mellem 1 og 250."
@@ -1100,7 +1244,7 @@ async def hent_liste_oplysningsskemaer(
     page_number = 0
     page_count = 0
 
-    all_results: list[Any] = []
+    alle_raekker: list[dict[str, Any]] = []
 
     reported_total: int | None = None
     reported_page_count: int | None = None
@@ -1228,47 +1372,53 @@ async def hent_liste_oplysningsskemaer(
                 reported_total = total_value
 
         if reported_page_count is None:
-            pages_value = search_result.get(
+            page_count_value = search_result.get(
                 "resultsPagesCount"
             )
 
             if (
-                isinstance(pages_value, int)
-                and not isinstance(pages_value, bool)
+                isinstance(page_count_value, int)
+                and not isinstance(
+                    page_count_value,
+                    bool,
+                )
             ):
-                reported_page_count = pages_value
+                reported_page_count = (
+                    page_count_value
+                )
+
+        gyldige_raekker = [
+            row
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+        if len(gyldige_raekker) != len(rows):
+            raise RuntimeError(
+                f"Side {page_number + 1} indeholdt "
+                "en eller flere rækker, som ikke var "
+                "dictionaries."
+            )
+
+        alle_raekker.extend(
+            gyldige_raekker
+        )
 
         page_count += 1
         number_of_rows = len(rows)
 
-        all_results.extend(
-            rows
-        )
-
         print(
             f"Side {page_number + 1}: "
             f"{number_of_rows} poster. "
-            f"Samlet hentet: {len(all_results)}."
+            f"Samlet hentet: {len(alle_raekker)}."
         )
-
-        if reported_total is not None:
-            print(
-                "Samlet antal oplyst af FASIT: "
-                f"{reported_total}"
-            )
-
-        if reported_page_count is not None:
-            print(
-                "Antal sider oplyst af FASIT: "
-                f"{reported_page_count}"
-            )
 
         if number_of_rows == 0:
             break
 
         if (
             reported_total is not None
-            and len(all_results) >= reported_total
+            and len(alle_raekker) >= reported_total
         ):
             break
 
@@ -1289,165 +1439,325 @@ async def hent_liste_oplysningsskemaer(
 
     if (
         reported_total is not None
-        and len(all_results) > reported_total
+        and len(alle_raekker) < reported_total
     ):
-        all_results = all_results[
+        raise RuntimeError(
+            "Ikke alle oplysningsskemaer blev hentet. "
+            f"FASIT oplyste {reported_total}, men "
+            f"funktionen hentede {len(alle_raekker)}."
+        )
+
+    if (
+        reported_total is not None
+        and len(alle_raekker) > reported_total
+    ):
+        alle_raekker = alle_raekker[
             :reported_total
         ]
 
-    return {
-        "results": all_results,
-        "totalResults": len(all_results),
-        "reportedTotal": reported_total,
-        "pageCount": page_count,
-        "reportedPageCount": reported_page_count,
-    }
+    print()
+    print(
+        "LISTE_OPLYSNINGSSKEMAER er hentet."
+    )
+    print(
+        "Antal hentede rækker: "
+        f"{len(alle_raekker)}"
+    )
+    print(
+        "Antal udførte sidekald: "
+        f"{page_count}"
+    )
 
+    return alle_raekker
 
-async def TEST_LISTE_OPLYSNINGSSKEMAER(
+#Hent Aktivitetsparate kontanthjælpsmodtagere over 30 - afklaringsretten.
+
+async def hent_aktivitetsparate_kontanthjaelpsmodtagere_over_30(
     api_client: FasitApiClient,
     *,
-    created_after: str = "2025-06-16T22:00:00Z",
-    target_group_id: str = OPLYSNINGSSKEMA_TARGET_GROUP_ID,
-    case_statuses: list[str] | None = None,
+    target_group_id: str = AKTIVITETSPARATE_TARGET_GROUP_ID,
+    primary_case_statuses: list[str] | None = None,
     page_size: int = 250,
-    output_file: str | None = None,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     """
-    Tester og validerer hentning af hele listen over
-    oplysningsskemaer.
+    Henter alle aktivitetsparate kontanthjælpsmodtagere
+    over 30 år som individuelle rækker.
 
-    Funktionen:
-    - kalder hent_liste_oplysningsskemaer én gang,
-    - validerer det samlede resultat,
-    - kontrollerer at alle oplyste poster er hentet,
-    - printer kun antal poster og sidekald,
-    - gemmer eventuelt rækkerne i en JSON-fil,
-    - returnerer hele det validerede resultat.
+    Funktionen håndterer automatisk paginering ved at
+    kalde FASIT med pageNumber 0, 1, 2 osv.
+
+    Søgekriterier:
+    - Primær sagsstatus er 1 eller 3.
+    - Sagens målgruppe matcher target_group_id.
+    - Sagens slutdato er dags dato eller senere,
+      eller sagens slutdato er tom.
+    - Borgerens alder er over 29 år.
 
     Parametre:
     - api_client: Den fælles FasitApiClient.
-    - created_after: Medtag sager oprettet efter tidspunktet.
-    - target_group_id: Målgruppe-id for oplysningsskemaer.
-    - case_statuses: Sagsstatusser, eksempelvis ["1", "3"].
-    - page_size: Antal resultater pr. API-kald, maksimalt 250.
-    - output_file: Valgfri sti til en JSON-fil.
+    - target_group_id: Målgruppe-id for søgningen.
+    - primary_case_statuses: Primære sagsstatusser.
+    - page_size: Antal resultater pr. API-kald,
+      maksimalt 250.
 
     Output:
-    En dictionary med:
-    - results: Alle hentede rækker.
-    - totalResults: Faktisk antal hentede rækker.
-    - reportedTotal: Antal resultater oplyst af FASIT.
-    - pageCount: Antal udførte sidekald.
-    - reportedPageCount: Antal sider oplyst af FASIT.
+    En liste med alle rækker fra samtlige sider.
+
+    Eksempel:
+    [
+        {
+            "CitizenFullName": "...",
+            "CitizenCprFormatted": "...",
+            "PrimaryCase.CitizenCurrentTargetGroup": "...",
+            "PrimaryCase.PrimaryCaseStartDate": "...",
+            "PrimaryCase.PrimaryCaseEndDate": "...",
+            "CitizenAge": 35,
+        },
+        {
+            "CitizenFullName": "...",
+            "CitizenCprFormatted": "...",
+            "PrimaryCase.CitizenCurrentTargetGroup": "...",
+            "PrimaryCase.PrimaryCaseStartDate": "...",
+            "PrimaryCase.PrimaryCaseEndDate": "...",
+            "CitizenAge": 42,
+        },
+    ]
     """
-    normalized_case_statuses = (
-        case_statuses
-        if case_statuses is not None
-        else [
+    validated_target_group_id = (
+        _validate_target_group_id(
+            target_group_id
+        )
+    )
+
+    if primary_case_statuses is None:
+        normalized_primary_case_statuses = [
             "1",
             "3",
         ]
-    )
+    else:
+        if not isinstance(
+            primary_case_statuses,
+            list,
+        ):
+            raise ValueError(
+                "primary_case_statuses skal være "
+                "en liste."
+            )
 
-    result = await hent_liste_oplysningsskemaer(
-        api_client=api_client,
-        created_after=created_after,
-        target_group_id=target_group_id,
-        case_statuses=normalized_case_statuses,
-        page_size=page_size,
-    )
+        normalized_primary_case_statuses: list[str] = []
 
-    result = _validate_response(
-        result=result,
-        response_name="TEST_LISTE_OPLYSNINGSSKEMAER",
-    )
+        for status in primary_case_statuses:
+            if not isinstance(status, str):
+                raise ValueError(
+                    "Alle værdier i "
+                    "primary_case_statuses skal "
+                    "være tekstværdier."
+                )
 
-    results = result.get(
-        "results"
-    )
+            normalized_status = status.strip()
 
-    if not isinstance(results, list):
-        raise RuntimeError(
-            "TEST_LISTE_OPLYSNINGSSKEMAER manglede "
-            "en liste i feltet 'results'."
+            if not normalized_status:
+                raise ValueError(
+                    "primary_case_statuses må ikke "
+                    "indeholde tomme værdier."
+                )
+
+            normalized_primary_case_statuses.append(
+                normalized_status
+            )
+
+    if not normalized_primary_case_statuses:
+        raise ValueError(
+            "primary_case_statuses må ikke være tom."
         )
-
-    total_results = result.get(
-        "totalResults"
-    )
 
     if (
-        not isinstance(total_results, int)
-        or isinstance(total_results, bool)
+        not isinstance(page_size, int)
+        or isinstance(page_size, bool)
     ):
-        raise RuntimeError(
-            "TEST_LISTE_OPLYSNINGSSKEMAER manglede "
-            "et heltal i feltet 'totalResults'."
+        raise ValueError(
+            "page_size skal være et heltal."
         )
 
-    page_count = result.get(
-        "pageCount"
-    )
-
-    if (
-        not isinstance(page_count, int)
-        or isinstance(page_count, bool)
-    ):
-        raise RuntimeError(
-            "TEST_LISTE_OPLYSNINGSSKEMAER manglede "
-            "et heltal i feltet 'pageCount'."
+    if page_size < 1 or page_size > 250:
+        raise ValueError(
+            "page_size skal være mellem 1 og 250."
         )
 
-    reported_total = result.get(
-        "reportedTotal"
-    )
+    page_number = 0
+    page_count = 0
+
+    alle_raekker: list[dict[str, Any]] = []
+
+    reported_total: int | None = None
+    reported_page_count: int | None = None
+
+    while True:
+        payload = (
+            _create_aktivitetsparate_over_30_payload(
+                target_group_id=(
+                    validated_target_group_id
+                ),
+                primary_case_statuses=(
+                    normalized_primary_case_statuses
+                ),
+                page_number=page_number,
+                page_size=page_size,
+            )
+        )
+
+        print(
+            f"Henter side {page_number + 1}: "
+            f"pageNumber={page_number}, "
+            f"pageSize={page_size}"
+        )
+
+        page_result = await api_client.post(
+            endpoint=LISTE_SEARCH_ENDPOINT,
+            json_body=payload,
+        )
+
+        page_result = _validate_response(
+            result=page_result,
+            response_name=(
+                "AKTIVITETSPARATE_"
+                "KONTANTHJAELPSMODTAGERE_OVER_30 "
+                f"side {page_number + 1}"
+            ),
+        )
+
+        search_result = page_result.get(
+            "searchResult"
+        )
+
+        if not isinstance(search_result, dict):
+            raise RuntimeError(
+                "FASIT-responsen manglede en "
+                "dictionary i feltet 'searchResult'."
+            )
+
+        rows = search_result.get(
+            "rows"
+        )
+
+        if not isinstance(rows, list):
+            raise RuntimeError(
+                "FASIT-responsens searchResult "
+                "manglede en liste i feltet 'rows'. "
+                "Felter i searchResult: "
+                f"{list(search_result.keys())}"
+            )
+
+        if reported_total is None:
+            total_value = search_result.get(
+                "totalResultsCount"
+            )
+
+            if (
+                isinstance(total_value, int)
+                and not isinstance(
+                    total_value,
+                    bool,
+                )
+            ):
+                reported_total = total_value
+
+        if reported_page_count is None:
+            page_count_value = search_result.get(
+                "resultsPagesCount"
+            )
+
+            if (
+                isinstance(page_count_value, int)
+                and not isinstance(
+                    page_count_value,
+                    bool,
+                )
+            ):
+                reported_page_count = (
+                    page_count_value
+                )
+
+        gyldige_raekker = [
+            row
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+        if len(gyldige_raekker) != len(rows):
+            raise RuntimeError(
+                f"Side {page_number + 1} indeholdt "
+                "en eller flere rækker, som ikke var "
+                "dictionaries."
+            )
+
+        alle_raekker.extend(
+            gyldige_raekker
+        )
+
+        page_count += 1
+        number_of_rows = len(rows)
+
+        print(
+            f"Side {page_number + 1}: "
+            f"{number_of_rows} poster. "
+            f"Samlet hentet: {len(alle_raekker)}."
+        )
+
+        if reported_total is not None:
+            print(
+                "Samlet antal oplyst af FASIT: "
+                f"{reported_total}"
+            )
+
+        if reported_page_count is not None:
+            print(
+                "Antal sider oplyst af FASIT: "
+                f"{reported_page_count}"
+            )
+
+        if number_of_rows == 0:
+            break
+
+        if (
+            reported_total is not None
+            and len(alle_raekker) >= reported_total
+        ):
+            break
+
+        if (
+            reported_page_count is not None
+            and page_count >= reported_page_count
+        ):
+            break
+
+        if (
+            reported_total is None
+            and reported_page_count is None
+            and number_of_rows < page_size
+        ):
+            break
+
+        page_number += 1
 
     if (
         reported_total is not None
-        and (
-            not isinstance(reported_total, int)
-            or isinstance(reported_total, bool)
-        )
+        and len(alle_raekker) < reported_total
     ):
         raise RuntimeError(
-            "Feltet 'reportedTotal' skal være "
-            "et heltal eller None."
-        )
-
-    reported_page_count = result.get(
-        "reportedPageCount"
-    )
-
-    if (
-        reported_page_count is not None
-        and (
-            not isinstance(reported_page_count, int)
-            or isinstance(reported_page_count, bool)
-        )
-    ):
-        raise RuntimeError(
-            "Feltet 'reportedPageCount' skal være "
-            "et heltal eller None."
-        )
-
-    if total_results != len(results):
-        raise RuntimeError(
-            "totalResults matcher ikke antallet "
-            "af rækker i results. "
-            f"totalResults={total_results}, "
-            f"len(results)={len(results)}."
+            "Ikke alle aktivitetsparate "
+            "kontanthjælpsmodtagere blev hentet. "
+            f"FASIT oplyste {reported_total}, men "
+            f"funktionen hentede {len(alle_raekker)}."
         )
 
     if (
         reported_total is not None
-        and total_results != reported_total
+        and len(alle_raekker) > reported_total
     ):
-        raise RuntimeError(
-            "Ikke alle resultater blev hentet. "
-            f"FASIT oplyste {reported_total} resultater, "
-            f"men funktionen hentede {total_results}."
-        )
+        alle_raekker = alle_raekker[
+            :reported_total
+        ]
 
     if (
         reported_page_count is not None
@@ -1461,51 +1771,21 @@ async def TEST_LISTE_OPLYSNINGSSKEMAER(
         )
 
     print()
-    print("LISTE_OPLYSNINGSSKEMAER er hentet.")
     print(
-        "Antal hentede poster: "
-        f"{total_results}"
+        "AKTIVITETSPARATE_"
+        "KONTANTHJAELPSMODTAGERE_OVER_30 "
+        "er hentet."
+    )
+    print(
+        "Antal hentede rækker: "
+        f"{len(alle_raekker)}"
     )
     print(
         "Antal udførte sidekald: "
         f"{page_count}"
     )
 
-    if output_file is not None:
-        if not isinstance(output_file, str):
-            raise ValueError(
-                "output_file skal være en tekstværdi "
-                "eller None."
-            )
-
-        normalized_output_file = output_file.strip()
-
-        if not normalized_output_file:
-            raise ValueError(
-                "output_file må ikke være tom, når "
-                "parameteren er angivet."
-            )
-
-        with open(
-            normalized_output_file,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                results,
-                file,
-                indent=2,
-                ensure_ascii=False,
-                default=str,
-            )
-
-        print(
-            "Resultatet blev gemt i: "
-            f"{normalized_output_file}"
-        )
-
-    return result
-
+    return alle_raekker
 
 # ---------------------------------------------------------------------------
 # Persongrupper og persongruppemarkeringer
