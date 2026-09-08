@@ -1152,6 +1152,8 @@ async def hent_liste_oplysningsskemaer(
     Funktionen håndterer automatisk paginering ved at kalde
     FASIT med pageNumber 0, 1, 2 osv.
 
+    Feltet "id" omdøbes til "citizenid" i hver række.
+
     Parametre:
     - api_client: Den fælles FasitApiClient.
     - created_after: Medtag sager oprettet efter tidspunktet.
@@ -1160,18 +1162,15 @@ async def hent_liste_oplysningsskemaer(
     - page_size: Antal resultater pr. API-kald, maksimalt 250.
 
     Output:
-    En liste med alle rækker fra samtlige sider.
+    En liste med alle normaliserede rækker fra samtlige sider.
 
     Eksempel:
     [
         {
+            "citizenid": "...",
             "CitizenCprFormatted": "...",
             "Cases.CreatedOn": "...",
-        },
-        {
-            "CitizenCprFormatted": "...",
-            "Cases.CreatedOn": "...",
-        },
+        }
     ]
     """
     if not isinstance(created_after, str):
@@ -1226,12 +1225,10 @@ async def hent_liste_oplysningsskemaer(
                 normalized_status
             )
 
-    if not isinstance(page_size, int):
-        raise ValueError(
-            "page_size skal være et heltal."
-        )
-
-    if isinstance(page_size, bool):
+    if (
+        not isinstance(page_size, int)
+        or isinstance(page_size, bool)
+    ):
         raise ValueError(
             "page_size skal være et heltal."
         )
@@ -1387,21 +1384,57 @@ async def hent_liste_oplysningsskemaer(
                     page_count_value
                 )
 
-        gyldige_raekker = [
-            row
-            for row in rows
-            if isinstance(row, dict)
-        ]
+        normaliserede_raekker: list[
+            dict[str, Any]
+        ] = []
 
-        if len(gyldige_raekker) != len(rows):
-            raise RuntimeError(
-                f"Side {page_number + 1} indeholdt "
-                "en eller flere rækker, som ikke var "
-                "dictionaries."
+        for row_number, row in enumerate(
+            rows,
+            start=1,
+        ):
+            if not isinstance(row, dict):
+                raise RuntimeError(
+                    f"Række {row_number} på side "
+                    f"{page_number + 1} var ikke "
+                    "en dictionary."
+                )
+
+            normaliseret_raekke = dict(
+                row
+            )
+
+            if "id" in normaliseret_raekke:
+                original_id = (
+                    normaliseret_raekke.pop("id")
+                )
+
+                existing_citizen_id = (
+                    normaliseret_raekke.get(
+                        "citizenid"
+                    )
+                )
+
+                if (
+                    existing_citizen_id is not None
+                    and existing_citizen_id
+                    != original_id
+                ):
+                    raise RuntimeError(
+                        "Rækken indeholdt både 'id' "
+                        "og 'citizenid' med forskellige "
+                        "værdier."
+                    )
+
+                normaliseret_raekke[
+                    "citizenid"
+                ] = original_id
+
+            normaliserede_raekker.append(
+                normaliseret_raekke
             )
 
         alle_raekker.extend(
-            gyldige_raekker
+            normaliserede_raekker
         )
 
         page_count += 1
@@ -1486,6 +1519,8 @@ async def hent_aktivitetsparate_kontanthjaelpsmodtagere_over_30(
     Funktionen håndterer automatisk paginering ved at
     kalde FASIT med pageNumber 0, 1, 2 osv.
 
+    Feltet "id" omdøbes til "citizenid" i hver række.
+
     Søgekriterier:
     - Primær sagsstatus er 1 eller 3.
     - Sagens målgruppe matcher target_group_id.
@@ -1501,27 +1536,8 @@ async def hent_aktivitetsparate_kontanthjaelpsmodtagere_over_30(
       maksimalt 250.
 
     Output:
-    En liste med alle rækker fra samtlige sider.
-
-    Eksempel:
-    [
-        {
-            "CitizenFullName": "...",
-            "CitizenCprFormatted": "...",
-            "PrimaryCase.CitizenCurrentTargetGroup": "...",
-            "PrimaryCase.PrimaryCaseStartDate": "...",
-            "PrimaryCase.PrimaryCaseEndDate": "...",
-            "CitizenAge": 35,
-        },
-        {
-            "CitizenFullName": "...",
-            "CitizenCprFormatted": "...",
-            "PrimaryCase.CitizenCurrentTargetGroup": "...",
-            "PrimaryCase.PrimaryCaseStartDate": "...",
-            "PrimaryCase.PrimaryCaseEndDate": "...",
-            "CitizenAge": 42,
-        },
-    ]
+    En liste med alle normaliserede rækker fra
+    samtlige sider.
     """
     validated_target_group_id = (
         _validate_target_group_id(
@@ -1620,8 +1636,7 @@ async def hent_aktivitetsparate_kontanthjaelpsmodtagere_over_30(
         page_result = _validate_response(
             result=page_result,
             response_name=(
-                "AKTIVITETSPARATE_"
-                "KONTANTHJAELPSMODTAGERE_OVER_30 "
+                f"{AKTIVITETSPARATE_KONTANTHJAELPSMODTAGERE_OVER_30} "
                 f"side {page_number + 1}"
             ),
         )
@@ -1678,21 +1693,60 @@ async def hent_aktivitetsparate_kontanthjaelpsmodtagere_over_30(
                     page_count_value
                 )
 
-        gyldige_raekker = [
-            row
-            for row in rows
-            if isinstance(row, dict)
-        ]
+        normaliserede_raekker: list[
+            dict[str, Any]
+        ] = []
 
-        if len(gyldige_raekker) != len(rows):
-            raise RuntimeError(
-                f"Side {page_number + 1} indeholdt "
-                "en eller flere rækker, som ikke var "
-                "dictionaries."
+        for row_number, row in enumerate(
+            rows,
+            start=1,
+        ):
+            if not isinstance(row, dict):
+                raise RuntimeError(
+                    f"Række {row_number} på side "
+                    f"{page_number + 1} var ikke "
+                    "en dictionary."
+                )
+
+            normaliseret_raekke = dict(
+                row
+            )
+
+            if "id" in normaliseret_raekke:
+                original_id = (
+                    normaliseret_raekke.pop(
+                        "id"
+                    )
+                )
+
+                existing_citizen_id = (
+                    normaliseret_raekke.get(
+                        "citizenid"
+                    )
+                )
+
+                if (
+                    existing_citizen_id is not None
+                    and existing_citizen_id
+                    != original_id
+                ):
+                    raise RuntimeError(
+                        f"Række {row_number} på side "
+                        f"{page_number + 1} indeholdt "
+                        "både 'id' og 'citizenid' med "
+                        "forskellige værdier."
+                    )
+
+                normaliseret_raekke[
+                    "citizenid"
+                ] = original_id
+
+            normaliserede_raekker.append(
+                normaliseret_raekke
             )
 
         alle_raekker.extend(
-            gyldige_raekker
+            normaliserede_raekker
         )
 
         page_count += 1
