@@ -16,6 +16,14 @@ BORGER_SEARCH_ENDPOINT = (
     "/api/search/queries/rankedsearchquery"
 )
 
+BORGER_DFDG_ENDPOINT = (
+    "/api/search/queries/getcitizenfromdfdg"
+)
+
+OPRET_BORGER_ENDPOINT = (
+    "/api/search/commands/createcitizen"
+)
+
 BORGER_INFORMATION_ENDPOINT = (
     "/api/citizen/queries/"
     "getauthoritycitizencontext"
@@ -167,6 +175,38 @@ def _validate_citizen_id(
         ) from error
 
     return str(parsed_citizen_id)
+
+def _cpr_uden_bindestreg(
+    cpr: str,
+) -> str:
+    """
+    Validerer CPR-nummeret og returnerer det
+    som 10 sammenhængende cifre.
+
+    Eksempel:
+    111111-1111 bliver til 1111111111.
+    """
+    normalized_cpr = normalize_cpr(
+        cpr
+    )
+
+    cpr_uden_bindestreg = (
+        normalized_cpr.replace(
+            "-",
+            "",
+        )
+    )
+
+    if (
+        len(cpr_uden_bindestreg) != 10
+        or not cpr_uden_bindestreg.isdigit()
+    ):
+        raise ValueError(
+            "CPR-nummeret kunne ikke normaliseres "
+            "til 10 cifre."
+        )
+
+    return cpr_uden_bindestreg
 
 
 def _validate_target_group_id(
@@ -796,31 +836,20 @@ async def search_citizen(
         response_name="BORGER_SEARCH",
     )
 
-
-async def hent_borger_id(
-    api_client: FasitApiClient,
-    cpr: str,
-) -> str:
+def _find_citizen_id_i_search_result(
+    search_result: dict[str, Any],
+) -> str | None:
     """
-    Søger efter en borger og returnerer borgerens documentId.
-
-    Parametre:
-    - api_client: Den fælles FasitApiClient for processen.
-    - cpr: CPR-nummer med eller uden bindestreg.
+    Finder borgerens documentId i et normalt
+    FASIT-søgeresultat.
 
     Output:
-    Borgerens FASIT-id som tekst.
+    - citizenId som tekst, hvis borgeren blev fundet.
+    - None, hvis ingen borger blev fundet.
 
-    Funktionen kaster RuntimeError, hvis:
-    - ingen borger bliver fundet,
-    - flere borgere bliver fundet,
-    - resultatet ikke har documentId.
+    Funktionen kaster RuntimeError, hvis flere borgere
+    findes, eller hvis resultatet mangler documentId.
     """
-    search_result = await search_citizen(
-        api_client=api_client,
-        cpr=cpr,
-    )
-
     ranked_results = search_result.get(
         "rankedSearchResult",
         [],
@@ -842,32 +871,312 @@ async def hent_borger_id(
     ]
 
     if not citizen_results:
-        raise RuntimeError(
-            "Der blev ikke fundet en borger med det "
-            "angivne CPR-nummer."
-        )
+        return None
 
     if len(citizen_results) > 1:
         raise RuntimeError(
-            "FASIT returnerede flere borgere for det "
-            "angivne CPR-nummer."
+            "FASIT returnerede flere borgere for "
+            "det angivne CPR-nummer."
         )
 
-    borger_id = citizen_results[0].get(
+    citizen_id = citizen_results[0].get(
         "documentId"
     )
 
     if (
-        not isinstance(borger_id, str)
-        or not borger_id.strip()
+        not isinstance(citizen_id, str)
+        or not citizen_id.strip()
     ):
         raise RuntimeError(
             "Borgeren blev fundet, men resultatet "
             "manglede documentId."
         )
 
-    return borger_id.strip()
+    return _validate_citizen_id(
+        citizen_id
+    )
 
+
+async def hent_borger_id(
+    api_client: FasitApiClient,
+    cpr: str,
+    *,
+    opret_borger_hvis_ikke_findes: bool = False,
+) -> str:
+    """
+    Søger efter en borger og returnerer borgerens citizenId.
+
+    Hvis borgeren ikke findes i FASIT, kan funktionen
+    valgfrit forsøge at:
+
+    1. Hente borgeren fra DFDG.
+    2. Oprette borgeren i FASIT.
+    3. Søge efter borgeren igen i FASIT.
+    4. Returnere citizenId fra den normale søgning.
+
+    Parametre:
+    - api_client: Den fælles FasitApiClient.
+    - cpr: CPR-nummer med eller uden bindestreg.
+    - opret_borger_hvis_ikke_findes:
+      - False: Borgeren oprettes ikke.
+      - True: Borgeren forsøges hentet fra DFDG og
+        oprettet i FASIT.
+
+    Standard:
+    opret_borger_hvis_ikke_findes er False.
+
+    Output:
+    Borgerens FASIT-id som tekst.
+    """
+    if not isinstance(
+        opret_borger_hvis_ikke_findes,
+        bool,
+    ):
+        raise ValueError(
+            "opret_borger_hvis_ikke_findes skal "
+            "være True eller False."
+        )
+
+    normalized_cpr = normalize_cpr(
+        cpr
+    )
+
+    search_result = await search_citizen(
+        api_client=api_client,
+        cpr=normalized_cpr,
+    )
+
+    existing_citizen_id = (
+        _find_citizen_id_i_search_result(
+            search_result
+        )
+    )
+
+    if existing_citizen_id is not None:
+        return existing_citizen_id
+
+    if not opret_borger_hvis_ikke_findes:
+        raise RuntimeError(
+            "Der blev ikke fundet en borger med det "
+            "angivne CPR-nummer."
+        )
+
+    created_citizen_id = await opret_borger_fra_dfdg(
+        api_client=api_client,
+        cpr=normalized_cpr,
+    )
+
+    search_result_after_creation = (
+        await search_citizen(
+            api_client=api_client,
+            cpr=normalized_cpr,
+        )
+    )
+
+    searched_citizen_id = (
+        _find_citizen_id_i_search_result(
+            search_result_after_creation
+        )
+    )
+
+    if searched_citizen_id is None:
+        raise RuntimeError(
+            "Borgeren blev oprettet i FASIT, men "
+            "kunne ikke findes i den efterfølgende "
+            "normale søgning."
+        )
+
+    if searched_citizen_id != created_citizen_id:
+        raise RuntimeError(
+            "CitizenId fra oprettelsen matcher ikke "
+            "documentId fra den efterfølgende søgning."
+        )
+
+    return searched_citizen_id
+
+
+async def hent_borger_fra_dfdg(
+    api_client: FasitApiClient,
+    cpr: str,
+) -> dict[str, Any]:
+    """
+    Henter en borger fra DFDG, når borgeren endnu
+    ikke findes i FASIT.
+
+    Parametre:
+    - api_client: Den fælles FasitApiClient.
+    - cpr: CPR-nummer med eller uden bindestreg.
+
+    Output:
+    DFDG-borgeren som en dictionary.
+
+    Eksempel:
+    {
+        "title": "...",
+        "description": "...",
+        "documentId": "1111111111",
+        "documentType": "DfdgCitizen"
+    }
+    """
+    normalized_cpr = _cpr_uden_bindestreg(
+        cpr
+    )
+
+    payload = {
+        "citizenCpr": normalized_cpr,
+    }
+
+    result = await api_client.post(
+        endpoint=BORGER_DFDG_ENDPOINT,
+        json_body=payload,
+    )
+
+    result = _validate_response(
+        result=result,
+        response_name="BORGER_FRA_DFDG",
+    )
+
+    citizens = result.get(
+        "citizen"
+    )
+
+    if not isinstance(citizens, list):
+        raise RuntimeError(
+            "DFDG-responsen manglede en liste "
+            "i feltet 'citizen'."
+        )
+
+    if not citizens:
+        raise RuntimeError(
+            "Borgeren blev ikke fundet i DFDG."
+        )
+
+    if len(citizens) > 1:
+        raise RuntimeError(
+            "DFDG returnerede flere borgere for "
+            "det angivne CPR-nummer."
+        )
+
+    dfdg_citizen = citizens[0]
+
+    if not isinstance(dfdg_citizen, dict):
+        raise RuntimeError(
+            "DFDG returnerede borgeren i et "
+            "uventet format."
+        )
+
+    document_type = dfdg_citizen.get(
+        "documentType"
+    )
+
+    if document_type != "DfdgCitizen":
+        raise RuntimeError(
+            "DFDG-resultatet havde en uventet "
+            "documentType. "
+            f"Modtog {document_type!r}."
+        )
+
+    document_id = dfdg_citizen.get(
+        "documentId"
+    )
+
+    if not isinstance(document_id, str):
+        raise RuntimeError(
+            "DFDG-resultatet manglede en tekstværdi "
+            "i feltet 'documentId'."
+        )
+
+    normalized_document_id = (
+        document_id
+        .replace("-", "")
+        .strip()
+    )
+
+    if normalized_document_id != normalized_cpr:
+        raise RuntimeError(
+            "CPR-nummeret i DFDG-resultatet matcher "
+            "ikke det CPR-nummer, der blev søgt efter."
+        )
+
+    return dfdg_citizen
+
+async def opret_borger_fra_dfdg(
+    api_client: FasitApiClient,
+    cpr: str,
+) -> str:
+    """
+    Opretter en DFDG-borger i FASIT.
+
+    Funktionen kontrollerer først, at borgeren findes
+    i DFDG. Derefter oprettes borgeren i FASIT.
+
+    Parametre:
+    - api_client: Den fælles FasitApiClient.
+    - cpr: CPR-nummer med eller uden bindestreg.
+
+    Output:
+    Det citizenId, som FASIT returnerer efter oprettelsen.
+    """
+    normalized_cpr = _cpr_uden_bindestreg(
+        cpr
+    )
+
+    dfdg_citizen = await hent_borger_fra_dfdg(
+        api_client=api_client,
+        cpr=normalized_cpr,
+    )
+
+    document_id = dfdg_citizen.get(
+        "documentId"
+    )
+
+    if not isinstance(document_id, str):
+        raise RuntimeError(
+            "DFDG-resultatet manglede documentId."
+        )
+
+    normalized_document_id = (
+        document_id
+        .replace("-", "")
+        .strip()
+    )
+
+    if normalized_document_id != normalized_cpr:
+        raise RuntimeError(
+            "DFDG-borgerens documentId matcher "
+            "ikke det angivne CPR-nummer."
+        )
+
+    payload = {
+        "cpr": normalized_cpr,
+    }
+
+    result = await api_client.post(
+        endpoint=OPRET_BORGER_ENDPOINT,
+        json_body=payload,
+    )
+
+    result = _validate_response(
+        result=result,
+        response_name="OPRET_BORGER",
+    )
+
+    citizen_id = result.get(
+        "citizenId"
+    )
+
+    if (
+        not isinstance(citizen_id, str)
+        or not citizen_id.strip()
+    ):
+        raise RuntimeError(
+            "FASIT oprettede borgeren, men responsen "
+            "manglede citizenId."
+        )
+
+    return _validate_citizen_id(
+        citizen_id
+    )
 
 # ---------------------------------------------------------------------------
 # Borgerdata og overblik
