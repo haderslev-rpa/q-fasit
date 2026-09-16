@@ -6,7 +6,6 @@ from typing import Any
 from dotenv import load_dotenv
 
 from q_fasit.api.borger import (
-    hent_borger_id,
     hent_borgeropgaver_metadata,
 )
 from q_fasit.api.client import FasitApiClient
@@ -39,23 +38,23 @@ async def main() -> None:
     Tester hentning af metadata for alle borgerens opgaver.
 
     Flow:
-    1. Indlæser CPR-nummer fra .env.
-    2. Opretter token manager og API-klient.
-    3. Søger efter borgeren via CPR.
-    4. Bruger borgerens documentId som citizenId.
-    5. Henter metadata for alle borgerens opgaver.
-    6. Gemmer API-svaret i variablen result.
+    1. Indlæser TEST_CITIZEN_ID fra .env.
+    2. Opretter token-manager og API-klient.
+    3. Henter metadata for alle borgerens opgaver
+       direkte via citizenId.
+    4. Gemmer API-svaret i variablen result.
     """
     load_dotenv()
 
-    test_cpr = os.getenv(
-        "test_cpr",
+    citizen_id = os.getenv(
+        "TEST_CITIZEN_ID",
         "",
     ).strip()
 
-    if not test_cpr:
+    if not citizen_id:
         raise RuntimeError(
-            "Variablen test_cpr mangler i .env-filen."
+            "Variablen TEST_CITIZEN_ID mangler "
+            "i .env-filen."
         )
 
     headless = os.getenv(
@@ -80,15 +79,10 @@ async def main() -> None:
     )
 
     try:
-        print("Søger efter borger via CPR-nummer...")
-
-        citizen_id = await hent_borger_id(
-            api_client=api_client,
-            cpr=test_cpr,
+        print(
+            "Henter metadata for alle borgerens "
+            "opgaver via citizenId..."
         )
-
-        print("Borgerens citizenId blev fundet.")
-        print("Henter metadata for alle borgerens opgaver...")
 
         result = await hent_borgeropgaver_metadata(
             api_client=api_client,
@@ -102,7 +96,9 @@ async def main() -> None:
                 f"men modtog {type(result).__name__}."
             )
 
-        print("Metadata for alle borgerens opgaver blev hentet.")
+        print(
+            "Metadata for alle borgerens opgaver blev hentet."
+        )
 
         print_result(
             result=result,
@@ -113,19 +109,27 @@ async def main() -> None:
         print("=" * 80)
         print("TESTEN STOPPEDE MED EN FEJL")
         print("=" * 80)
-        print(f"Fejltype: {type(error).__name__}")
-        print(f"Fejltekst: {error}")
+        print(
+            f"Fejltype: {type(error).__name__}"
+        )
+        print(
+            f"Fejltekst: {error}"
+        )
 
         if not headless:
             print()
             print(
-                "Browseren holdes åben, så fejlen kan undersøges."
+                "Browseren holdes åben, så fejlen "
+                "kan undersøges."
             )
             print(
-                "Tryk Enter i terminalen, når browseren må lukkes."
+                "Tryk Enter i terminalen, når "
+                "browseren må lukkes."
             )
 
-            await asyncio.to_thread(input)
+            await asyncio.to_thread(
+                input
+            )
 
         raise
 
@@ -135,4 +139,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(
+        main()
+    )

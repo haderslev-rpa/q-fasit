@@ -4,10 +4,7 @@ import os
 
 from dotenv import load_dotenv
 
-from q_fasit.api.borger import (
-    BORGER_INFORMATION,
-    hent_borger_id,
-)
+from q_fasit.api.borger import BORGER_INFORMATION
 from q_fasit.api.client import FasitApiClient
 from q_fasit.api.token_manager import FasitTokenManager
 
@@ -17,21 +14,21 @@ async def main() -> None:
     Tester API-funktionen BORGER_INFORMATION.
 
     Flow:
-    1. Læser test_cpr fra .env.
-    2. Finder borgerens citizenId via CPR.
-    3. Henter borgerens information og myndighedskontekst.
-    4. Gemmer API-svaret i variablen result.
+    1. Læser TEST_CITIZEN_ID fra .env.
+    2. Henter borgerens information og myndighedskontekst.
+    3. Gemmer API-svaret i variablen result.
     """
     load_dotenv()
 
-    test_cpr = os.getenv(
-        "test_cpr",
+    citizen_id = os.getenv(
+        "TEST_CITIZEN_ID",
         "",
     ).strip()
 
-    if not test_cpr:
+    if not citizen_id:
         raise RuntimeError(
-            "Variablen test_cpr mangler i .env-filen."
+            "Variablen TEST_CITIZEN_ID mangler "
+            "i .env-filen."
         )
 
     headless = os.getenv(
@@ -56,21 +53,10 @@ async def main() -> None:
     )
 
     try:
-        print("Søger efter borger via CPR...")
-
-        citizen_id = await hent_borger_id(
-            api_client=api_client,
-            cpr=test_cpr,
+        print(
+            "Henter BORGER_INFORMATION "
+            "med citizenId..."
         )
-
-        if not citizen_id:
-            raise RuntimeError(
-                "Borgersøgningen returnerede ikke "
-                "et citizenId."
-            )
-
-        print("Borgerens citizenId blev fundet.")
-        print("Henter BORGER_INFORMATION...")
 
         result = await BORGER_INFORMATION(
             api_client=api_client,
@@ -83,9 +69,13 @@ async def main() -> None:
                 "et uventet format."
             )
 
-        print("BORGER_INFORMATION blev hentet.")
+        print(
+            "BORGER_INFORMATION blev hentet."
+        )
         print()
-        print("Result fra BORGER_INFORMATION:")
+        print(
+            "Result fra BORGER_INFORMATION:"
+        )
         print(
             json.dumps(
                 result,
@@ -97,9 +87,15 @@ async def main() -> None:
 
     except Exception as error:
         print()
-        print("Testen stoppede med en fejl.")
-        print(f"Fejltype: {type(error).__name__}")
-        print(f"Fejltekst: {error}")
+        print(
+            "Testen stoppede med en fejl."
+        )
+        print(
+            f"Fejltype: {type(error).__name__}"
+        )
+        print(
+            f"Fejltekst: {error}"
+        )
 
         if not headless:
             print()
@@ -107,7 +103,10 @@ async def main() -> None:
                 "Browseren holdes åben for fejlsøgning. "
                 "Tryk Enter, når browseren må lukkes."
             )
-            await asyncio.to_thread(input)
+
+            await asyncio.to_thread(
+                input
+            )
 
         raise
 
@@ -117,4 +116,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(
+        main()
+    )

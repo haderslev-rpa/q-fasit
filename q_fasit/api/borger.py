@@ -1174,10 +1174,13 @@ async def opret_borger_fra_dfdg(
             "manglede citizenId."
         )
 
-    return _validate_citizen_id(
+    validated_citizen_id = _validate_citizen_id(
         citizen_id
     )
 
+    await asyncio.sleep(3)
+
+    return validated_citizen_id
 # ---------------------------------------------------------------------------
 # Borgerdata og overblik
 # ---------------------------------------------------------------------------

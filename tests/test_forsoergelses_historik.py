@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 
 from q_fasit.api.borger import (
     FORSOERGELSES_HISTORIK,
-    hent_borger_id,
 )
 from q_fasit.api.client import FasitApiClient
 from q_fasit.api.token_manager import FasitTokenManager
@@ -58,23 +57,23 @@ async def main() -> None:
     Tester API-funktionen FORSOERGELSES_HISTORIK.
 
     Testens flow:
-    1. Indlæser test_cpr fra .env.
+    1. Indlæser TEST_CITIZEN_ID fra .env.
     2. Starter FASIT og henter Bearer-token.
-    3. Søger efter borgeren via CPR.
-    4. Henter borgerens citizenId.
-    5. Henter borgerens forsørgelseshistorik.
-    6. Gemmer API-svaret i variablen result.
+    3. Henter borgerens forsørgelseshistorik direkte
+       via citizenId.
+    4. Gemmer API-svaret i variablen result.
     """
     load_dotenv()
 
-    test_cpr = os.getenv(
-        "test_cpr",
+    citizen_id = os.getenv(
+        "TEST_CITIZEN_ID",
         "",
     ).strip()
 
-    if not test_cpr:
+    if not citizen_id:
         raise RuntimeError(
-            "Variablen test_cpr mangler i .env-filen."
+            "Variablen TEST_CITIZEN_ID mangler "
+            "i .env-filen."
         )
 
     headless = _get_headless_setting()
@@ -91,21 +90,10 @@ async def main() -> None:
     )
 
     try:
-        print("Søger efter borger via CPR...")
-
-        citizen_id = await hent_borger_id(
-            api_client=api_client,
-            cpr=test_cpr,
+        print(
+            "Henter FORSOERGELSES_HISTORIK "
+            "via citizenId..."
         )
-
-        if not citizen_id:
-            raise RuntimeError(
-                "Borgersøgningen returnerede ikke "
-                "et citizenId."
-            )
-
-        print("Borgerens citizenId blev fundet.")
-        print("Henter FORSOERGELSES_HISTORIK...")
 
         result = await FORSOERGELSES_HISTORIK(
             api_client=api_client,
@@ -118,14 +106,20 @@ async def main() -> None:
                 "et uventet format."
             )
 
-        print("FORSOERGELSES_HISTORIK blev hentet.")
+        print(
+            "FORSOERGELSES_HISTORIK blev hentet."
+        )
 
         print(
             "Felter i API-resultatet:",
-            ", ".join(sorted(result.keys())),
+            ", ".join(
+                sorted(result.keys())
+            ),
         )
 
-        _print_result(result)
+        _print_result(
+            result
+        )
 
         logger.info(
             "Test af FORSOERGELSES_HISTORIK "
@@ -138,11 +132,15 @@ async def main() -> None:
         )
 
         print()
-        print("Testen stoppede med en fejl.")
+        print(
+            "Testen stoppede med en fejl."
+        )
         print(
             f"Fejltype: {type(error).__name__}"
         )
-        print(f"Fejltekst: {error}")
+        print(
+            f"Fejltekst: {error}"
+        )
 
         if not headless:
             print()
@@ -153,7 +151,10 @@ async def main() -> None:
                 "Tryk Enter i terminalen, når "
                 "browseren må lukkes."
             )
-            await asyncio.to_thread(input)
+
+            await asyncio.to_thread(
+                input
+            )
 
         raise
 
@@ -175,4 +176,6 @@ if __name__ == "__main__":
         ),
     )
 
-    asyncio.run(main())
+    asyncio.run(
+        main()
+    )
