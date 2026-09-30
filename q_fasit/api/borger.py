@@ -6,6 +6,9 @@ from zoneinfo import ZoneInfo
 
 from q_fasit.api.client import FasitApiClient
 from q_fasit.utils import normalize_cpr
+import asyncio
+from datetime import date, datetime
+from typing import Any, Iterator
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +32,12 @@ BORGER_INFORMATION_ENDPOINT = (
     "getauthoritycitizencontext"
 )
 
+
+OPRET_BORGEROPGAVE_ENDPOINT = (
+    "/api/citizen/citizentask/commands/"
+    "createcitizentask"
+)
+
 BORGER_ADRESSEHISTORIK_ENDPOINT = (
     "/api/citizen/citizenmasterdata/citizencore/queries/"
     "getcitizenaddresshistory"
@@ -42,6 +51,10 @@ BORGEROVERBLIK_BESKAEFTIGELSE_ENDPOINT = (
 CITIZEN_TASKS_METADATA_ENDPOINT = (
     "/api/citizen/citizentask/queries/"
     "getcitizentasksmetadata"
+)
+
+DANISH_TIME_ZONE = ZoneInfo(
+    "Europe/Copenhagen"
 )
 
 JOURNAL_OG_DOKUMENTER_ENDPOINT = (
@@ -176,6 +189,47 @@ def _validate_citizen_id(
 
     return str(parsed_citizen_id)
 
+def _validate_uuid(
+    value: str,
+    field_name: str,
+) -> str:
+    """Validerer og normaliserer et UUID-felt.
+
+    Parametre:
+    - value: UUID-værdien som tekst.
+    - field_name: Feltnavnet til eventuelle fejlbeskeder.
+
+    Output:
+    UUID-værdien i standardiseret format.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{field_name} skal være en tekstværdi."
+        )
+
+    normalized_value = value.strip()
+
+    if not normalized_value:
+        raise ValueError(
+            f"{field_name} må ikke være tom."
+        )
+
+    try:
+        parsed_value = UUID(
+            normalized_value
+        )
+
+    except ValueError as error:
+        raise ValueError(
+            f"{field_name} havde ikke et gyldigt "
+            "UUID-format."
+        ) from error
+
+    return str(
+        parsed_value
+    )
+
+
 def _cpr_uden_bindestreg(
     cpr: str,
 ) -> str:
@@ -267,6 +321,205 @@ def _validate_response(
         )
 
     return result
+
+def _walk(
+    value: Any,
+) -> Iterator[Any]:
+    """Gennemløber dictionaries og lister rekursivt."""
+    yield value
+
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _walk(child)
+
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk(child)
+
+def _normalize_text(
+    value: str,
+) -> str:
+    """Normaliserer tekst til sammenligning."""
+    return " ".join(
+        value.split()
+    ).casefold()
+
+
+def _parse_task_due_date(
+    value: Any,
+) -> date | None:
+    """Konverterer FASITs forfaldsdato til dansk kalenderdato."""
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, datetime):
+        parsed_value = value
+
+    elif isinstance(value, date):
+        return value
+
+    elif isinstance(value, str):
+        try:
+            parsed_value = datetime.fromisoformat(
+                value.strip().replace(
+                    "Z",
+                    "+00:00",
+                )
+            )
+
+        except ValueError:
+            return None
+
+    else:
+        return None
+
+    if parsed_value.tzinfo is not None:
+        parsed_value = parsed_value.astimezone(
+            DANISH_TIME_ZONE
+        )
+
+    return parsed_value.date()
+
+
+def _parse_expected_due_date(
+    value: date | datetime | str,
+) -> date:
+    """Konverterer den forventede forfaldsdato til en dato."""
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(
+                DANISH_TIME_ZONE
+            )
+
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    if not isinstance(value, str):
+        raise ValueError(
+            "forventet_forfaldsdato skal være date, "
+            "datetime eller tekst."
+        )
+
+    normalized_value = value.strip()
+
+    if not normalized_value:
+        raise ValueError(
+            "forventet_forfaldsdato må ikke være tom."
+        )
+
+    try:
+        parsed_datetime = datetime.fromisoformat(
+            normalized_value.replace(
+                "Z",
+                "+00:00",
+            )
+        )
+
+        if parsed_datetime.tzinfo is not None:
+            parsed_datetime = parsed_datetime.astimezone(
+                DANISH_TIME_ZONE
+            )
+
+        return parsed_datetime.date()
+
+    except ValueError:
+        pass
+
+    for date_format in (
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(
+                normalized_value,
+                date_format,
+            ).date()
+
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "forventet_forfaldsdato havde ikke et "
+        "understøttet datoformat."
+    )
+
+
+def _find_matching_task(
+    tasks_result: dict[str, Any],
+    *,
+    expected_title: str,
+    expected_due_date: date,
+    expected_task_status: str,
+    expected_case_type: str,
+) -> dict[str, Any] | None:
+    """Finder en opgave med de forventede værdier."""
+    normalized_title = _normalize_text(
+        expected_title
+    )
+    normalized_status = _normalize_text(
+        expected_task_status
+    )
+    normalized_case_type = _normalize_text(
+        expected_case_type
+    )
+
+    for value in _walk(
+        tasks_result
+    ):
+        if not isinstance(value, dict):
+            continue
+
+        title = value.get(
+            "title"
+        )
+        task_status = value.get(
+            "taskStatus"
+        )
+        case_type = value.get(
+            "caseType"
+        )
+        due_date = _parse_task_due_date(
+            value.get("dueDate")
+        )
+
+        if (
+            not isinstance(title, str)
+            or not isinstance(task_status, str)
+            or not isinstance(case_type, str)
+            or due_date is None
+        ):
+            continue
+
+        title_matches = (
+            _normalize_text(title)
+            == normalized_title
+        )
+        due_date_matches = (
+            due_date
+            == expected_due_date
+        )
+        status_matches = (
+            _normalize_text(task_status)
+            == normalized_status
+        )
+        case_type_matches = (
+            _normalize_text(case_type)
+            == normalized_case_type
+        )
+
+        if (
+            title_matches
+            and due_date_matches
+            and status_matches
+            and case_type_matches
+        ):
+            return value
+
+    return None
+
 
 
 # ---------------------------------------------------------------------------
@@ -838,18 +1091,28 @@ async def search_citizen(
 
 def _find_citizen_id_i_search_result(
     search_result: dict[str, Any],
+    cpr: str,
 ) -> str | None:
     """
     Finder borgerens documentId i et normalt
     FASIT-søgeresultat.
+
+    Kun resultatet, hvor det søgte CPR-nummer fremgår
+    præcist i titlen, accepteres. Resultater, hvor CPR
+    kun forekommer i beskrivelsen eller noter, ignoreres.
 
     Output:
     - citizenId som tekst, hvis borgeren blev fundet.
     - None, hvis ingen borger blev fundet.
 
     Funktionen kaster RuntimeError, hvis flere borgere
-    findes, eller hvis resultatet mangler documentId.
+    har det søgte CPR-nummer i titlen, eller hvis det
+    matchende resultat mangler documentId.
     """
+    normalized_cpr = normalize_cpr(
+        cpr
+    )
+
     ranked_results = search_result.get(
         "rankedSearchResult",
         [],
@@ -861,12 +1124,18 @@ def _find_citizen_id_i_search_result(
             "uventet format."
         )
 
+    expected_cpr_text = (
+        f"({normalized_cpr})"
+    )
+
     citizen_results = [
         result
         for result in ranked_results
         if (
             isinstance(result, dict)
             and result.get("documentType") == "citizen"
+            and isinstance(result.get("title"), str)
+            and expected_cpr_text in result["title"]
         )
     ]
 
@@ -875,8 +1144,8 @@ def _find_citizen_id_i_search_result(
 
     if len(citizen_results) > 1:
         raise RuntimeError(
-            "FASIT returnerede flere borgere for "
-            "det angivne CPR-nummer."
+            "FASIT returnerede flere borgere, hvor "
+            "CPR-nummeret matchede titlen præcist."
         )
 
     citizen_id = citizen_results[0].get(
@@ -895,7 +1164,6 @@ def _find_citizen_id_i_search_result(
     return _validate_citizen_id(
         citizen_id
     )
-
 
 async def hent_borger_id(
     api_client: FasitApiClient,
@@ -948,7 +1216,8 @@ async def hent_borger_id(
 
     existing_citizen_id = (
         _find_citizen_id_i_search_result(
-            search_result
+            search_result=search_result,
+            cpr=normalized_cpr,
         )
     )
 
@@ -975,7 +1244,8 @@ async def hent_borger_id(
 
     searched_citizen_id = (
         _find_citizen_id_i_search_result(
-            search_result_after_creation
+            search_result=search_result_after_creation,
+            cpr=normalized_cpr,
         )
     )
 
@@ -1322,6 +1592,187 @@ async def hent_borgeropgaver_metadata(
         result=result,
         response_name="CITIZEN_TASKS_METADATA",
     )
+
+async def opret_borgeropgave(
+    api_client: FasitApiClient,
+    *,
+    citizen_id: str,
+    forfaldsdato: DatoType,
+    titel: str,
+    category_id: str,
+    case_id: str,
+    responsible_case_worker_id: str,
+    responsible_team_id: str,
+    case_type: str,
+    beskrivelse: str = "",
+    task_status: str = "Planlagt",
+    ventetid_sekunder: float = 1.0,
+) -> dict[str, Any]:
+    """Opretter og efterkontrollerer en borgeropgave i FASIT.
+
+    Funktionen:
+
+    1. Validerer inputværdierne.
+    2. Opretter opgaven i FASIT.
+    3. Venter det angivne antal sekunder.
+    4. Henter borgerens opgavemetadata.
+    5. Kontrollerer title, dueDate, taskStatus og caseType.
+    6. Returnerer den bekræftede opgave.
+
+    task_status er som standard "Planlagt", men kan
+    overskrives ved kaldet.
+
+    Funktionen kaster RuntimeError, hvis opgaven ikke
+    kan findes efter oprettelsen.
+    """
+    validated_citizen_id = _validate_citizen_id(
+        citizen_id
+    )
+
+    validated_category_id = _validate_uuid(
+        value=category_id,
+        field_name="category_id",
+    )
+
+    validated_case_id = _validate_uuid(
+        value=case_id,
+        field_name="case_id",
+    )
+
+    validated_case_worker_id = _validate_uuid(
+        value=responsible_case_worker_id,
+        field_name="responsible_case_worker_id",
+    )
+
+    validated_team_id = _validate_uuid(
+        value=responsible_team_id,
+        field_name="responsible_team_id",
+    )
+
+    if not isinstance(titel, str):
+        raise ValueError(
+            "titel skal være en tekstværdi."
+        )
+
+    normalized_title = " ".join(
+        titel.split()
+    )
+
+    if not normalized_title:
+        raise ValueError(
+            "titel må ikke være tom."
+        )
+
+    if not isinstance(beskrivelse, str):
+        raise ValueError(
+            "beskrivelse skal være en tekstværdi."
+        )
+
+    if (
+        not isinstance(case_type, str)
+        or not case_type.strip()
+    ):
+        raise ValueError(
+            "case_type skal være en ikke-tom tekstværdi."
+        )
+
+    normalized_case_type = " ".join(
+        case_type.split()
+    )
+
+    if (
+        not isinstance(task_status, str)
+        or not task_status.strip()
+    ):
+        raise ValueError(
+            "task_status skal være en ikke-tom tekstværdi."
+        )
+
+    normalized_task_status = " ".join(
+        task_status.split()
+    )
+
+    if (
+        not isinstance(ventetid_sekunder, (int, float))
+        or isinstance(ventetid_sekunder, bool)
+    ):
+        raise ValueError(
+            "ventetid_sekunder skal være et tal."
+        )
+
+    if ventetid_sekunder < 0:
+        raise ValueError(
+            "ventetid_sekunder må ikke være negativ."
+        )
+
+    parsed_due_date = _parse_dansk_dato(
+        dato=forfaldsdato,
+        feltnavn="forfaldsdato",
+    )
+
+    formatted_due_date = _dato_til_fasit_utc(
+        dato=parsed_due_date,
+        feltnavn="forfaldsdato",
+    )
+
+    payload = {
+        "citizenId": validated_citizen_id,
+        "dueDate": formatted_due_date,
+        "description": beskrivelse.strip(),
+        "title": normalized_title,
+        "categoryId": validated_category_id,
+        "caseId": validated_case_id,
+        "responsibleCaseWorkerId": (
+            validated_case_worker_id
+        ),
+        "responsibleTeamId": validated_team_id,
+    }
+
+    creation_result = await api_client.post(
+        endpoint=OPRET_BORGEROPGAVE_ENDPOINT,
+        json_body=payload,
+    )
+
+    _validate_response(
+        result=creation_result,
+        response_name="OPRET_BORGEROPGAVE",
+    )
+
+    # Vent på, at den nyoprettede opgave bliver tilgængelig
+    # i endpointet for borgerens opgavemetadata.
+    await asyncio.sleep(
+        float(ventetid_sekunder)
+    )
+
+    tasks_result = await hent_borgeropgaver_metadata(
+        api_client=api_client,
+        citizen_id=validated_citizen_id,
+    )
+
+    expected_due_date = _parse_expected_due_date(
+        parsed_due_date
+    )
+
+    matching_task = _find_matching_task(
+        tasks_result,
+        expected_title=normalized_title,
+        expected_due_date=expected_due_date,
+        expected_task_status=normalized_task_status,
+        expected_case_type=normalized_case_type,
+    )
+
+    if matching_task is None:
+        raise RuntimeError(
+            "Opgaven blev sendt til oprettelse, men kunne "
+            "ikke bekræftes efterfølgende. Der blev ikke "
+            "fundet en opgave med følgende værdier: "
+            f"title={normalized_title!r}, "
+            f"dueDate={expected_due_date.isoformat()!r}, "
+            f"taskStatus={normalized_task_status!r}, "
+            f"caseType={normalized_case_type!r}."
+        )
+
+    return matching_task
 
 
 async def JOURNAL_OG_DOKUMENTER(
