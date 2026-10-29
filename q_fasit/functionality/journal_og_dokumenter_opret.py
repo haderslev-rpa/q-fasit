@@ -1401,16 +1401,7 @@ async def nyt_journalnotat(
     # flow slutter efter bilagsvalideringen. Tilføj først klik, når knapteksten er
     # verificeret i det konkrete FASIT-miljø.
     return {
-        "url": url,
-        "titel": titel,
-        "sag": selected_case,
-        "notattype": selected_note_type,
-        "kilde": selected_source,
-        "notat": notat,
-        "haendelsesdato": haendelsesdato,
-        "haendelsestidspunkt": haendelsestidspunkt,
-        "brevets_datering": brevets_datering,
-        "opret_advis": opret_advis,
-        "attachments": attachments,
-        "ready_to_create": True,
+        "status": "ready_to_create",
+        "journal_created": False,
+        "attachment_count": len(attachments),
     }
